@@ -19,6 +19,7 @@ import java.lang.reflect.Method;
 /**
  * @author cginechen
  * @date 2016-03-27
+ * 沉浸式状态栏帮助类
  */
 public class QMUIStatusBarHelper {
 

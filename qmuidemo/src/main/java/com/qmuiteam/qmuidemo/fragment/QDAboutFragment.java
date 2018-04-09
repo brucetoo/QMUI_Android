@@ -80,7 +80,7 @@ public class QDAboutFragment extends BaseFragment {
     }
 
     @Override
-    public TransitionConfig onFetchTransitionConfig() {
+    public TransitionConfig obtainTransitionConfig() {
         return SCALE_TRANSITION_CONFIG;
     }
 }

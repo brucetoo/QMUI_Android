@@ -76,7 +76,7 @@ public abstract class QMUIFragment extends Fragment {
 
     private View mBaseView;
     private SwipeBackLayout mCacheView;
-    private boolean isCreateForSwipeBack = false;
+    private boolean mIsCreateForSwipeBack = false;
     private int mBackStackIndex = 0;
 
     private int mEnterAnimationStatus = ANIMATION_ENTER_STATUS_NOT_START;
@@ -189,11 +189,7 @@ public abstract class QMUIFragment extends Fragment {
 
     private SwipeBackLayout newSwipeBackLayout() {
         View rootView = onCreateView();
-        if (translucentFull()) {
-            rootView.setFitsSystemWindows(false);
-        } else {
-            rootView.setFitsSystemWindows(true);
-        }
+        rootView.setFitsSystemWindows(obtainsFitsSystemWindows());
         final SwipeBackLayout swipeBackLayout = SwipeBackLayout.wrap(rootView, dragBackEdge());
         swipeBackLayout.setEnableGesture(false);
         if(canDragBack()){
@@ -316,9 +312,9 @@ public abstract class QMUIFragment extends Fragment {
                                     if (fragmentObject instanceof QMUIFragment) {
                                         QMUIFragment fragment = (QMUIFragment) fragmentObject;
                                         ViewGroup container = getBaseFragmentActivity().getFragmentContainer();
-                                        fragment.isCreateForSwipeBack = true;
+                                        fragment.mIsCreateForSwipeBack = true;
                                         View baseView = fragment.onCreateView(LayoutInflater.from(getContext()), container, null);
-                                        fragment.isCreateForSwipeBack = false;
+                                        fragment.mIsCreateForSwipeBack = false;
                                         if (baseView != null) {
                                             baseView.setTag(R.id.qmui_arch_swipe_layout_in_back, SWIPE_BACK_VIEW);
                                             container.addView(baseView, 0);
@@ -365,7 +361,7 @@ public abstract class QMUIFragment extends Fragment {
         if (mCacheView == null) {
             swipeBackLayout = newSwipeBackLayout();
             mCacheView = swipeBackLayout;
-        } else if (isCreateForSwipeBack) {
+        } else if (mIsCreateForSwipeBack) {
             // in swipe back, exactly not in animation
             swipeBackLayout = mCacheView;
         } else {
@@ -396,7 +392,7 @@ public abstract class QMUIFragment extends Fragment {
         }
 
 
-        if (!isCreateForSwipeBack) {
+        if (!mIsCreateForSwipeBack) {
             mBaseView = swipeBackLayout.getContentView();
             swipeBackLayout.setTag(R.id.qmui_arch_swipe_layout_in_back, null);
         }
@@ -578,28 +574,24 @@ public abstract class QMUIFragment extends Fragment {
     }
 
     /**
-     * 沉浸式处理，返回 false，则状态栏下为内容区域，返回 true, 则状态栏下为 padding 区域
+     * Handle StatusBar immerse mode,false: the content area lay under status bar area.
+     * true: the content area has top padding(status bar height) on the top
      */
-    protected boolean translucentFull() {
-        return false;
+    protected boolean obtainsFitsSystemWindows() {
+        return true;
     }
 
     /**
-     * 如果是最后一个Fragment，finish后执行的方法
+     * The fragment transition config
      */
-    @SuppressWarnings("SameReturnValue")
-    public Object onLastFragmentFinish() {
-        return null;
-    }
-
-    /**
-     * 转场动画控制
-     */
-    public TransitionConfig onFetchTransitionConfig() {
+    public TransitionConfig obtainTransitionConfig() {
         return SLIDE_TRANSITION_CONFIG;
     }
 
-    ////////界面跳转动画
+    /**
+     * 界面跳转动画配置类，主要配置动画 enter,
+     * exit,pop enter,pop out四种情况
+     */
     public static final class TransitionConfig {
         public final int enter;
         public final int exit;

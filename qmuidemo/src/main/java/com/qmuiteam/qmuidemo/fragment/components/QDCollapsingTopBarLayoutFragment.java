@@ -57,8 +57,8 @@ public class QDCollapsingTopBarLayoutFragment extends BaseFragment {
     }
 
     @Override
-    protected boolean translucentFull() {
-        return true;
+    protected boolean obtainsFitsSystemWindows() {
+        return false;
     }
 
     private void initTopBar() {

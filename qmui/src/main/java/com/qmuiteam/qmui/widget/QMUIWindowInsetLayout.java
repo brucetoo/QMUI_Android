@@ -18,6 +18,7 @@ import com.qmuiteam.qmui.util.QMUIWindowInsetHelper;
  * 对于Keyboard的处理我们需要格外小心，这个组件不能只是处理状态栏，因为android还存在NavBar
  * 当windowInsets.bottom > 100dp的时候，我们认为是弹起了键盘。一旦弹起键盘，那么将由QMUIWindowInsetLayout消耗掉，其子view的windowInsets.bottom传递为0
  *
+ * 沉浸式状态后 使用 StatusBar 和 NavBar 区域占用处理的问题，一般是作为基准View布局，来适配
  * @author cginechen
  * @date 2016-03-25
  */
