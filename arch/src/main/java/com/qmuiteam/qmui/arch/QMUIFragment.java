@@ -1,15 +1,13 @@
 package com.qmuiteam.qmui.arch;
 
-import android.app.Activity;
-import android.content.Intent;
 import android.content.res.Resources;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.view.ViewCompat;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,7 +15,7 @@ import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 
-import com.qmuiteam.qmui.QMUILog;
+import com.qmuiteam.qmui.util.QMUILogger;
 import com.qmuiteam.qmui.util.QMUIViewHelper;
 
 import java.lang.reflect.Field;
@@ -59,28 +57,21 @@ public abstract class QMUIFragment extends Fragment {
             R.anim.slide_still, R.anim.scale_exit);
 
 
-    public static final int RESULT_CANCELED = Activity.RESULT_CANCELED;
-    public static final int RESULT_OK = Activity.RESULT_CANCELED;
-    public static final int RESULT_FIRST_USER = Activity.RESULT_FIRST_USER;
-
+    //Transition animation status(not start,start,end...)
     public static final int ANIMATION_ENTER_STATUS_NOT_START = -1;
     public static final int ANIMATION_ENTER_STATUS_STARTED = 0;
     public static final int ANIMATION_ENTER_STATUS_END = 1;
 
-
-    private static final int NO_REQUEST_CODE = 0;
-    private int mSourceRequestCode = NO_REQUEST_CODE;
-    private Intent mResultData = null;
-    private int mResultCode = RESULT_CANCELED;
-
-
     private View mBaseView;
-    private SwipeBackLayout mCacheView;
+    private SwipeBackLayout mCachedSwipeBackView;
     private boolean mIsCreateForSwipeBack = false;
     private int mBackStackIndex = 0;
 
     private int mEnterAnimationStatus = ANIMATION_ENTER_STATUS_NOT_START;
     private boolean mCalled = true;
+    /**
+     * List of render action runnable,handle this after transition animation done
+     */
     private ArrayList<Runnable> mDelayRenderRunnableList = new ArrayList<>();
 
     public QMUIFragment() {
@@ -88,7 +79,8 @@ public abstract class QMUIFragment extends Fragment {
     }
 
     public final QMUIFragmentActivity getBaseFragmentActivity() {
-        return (QMUIFragmentActivity) getActivity();
+        FragmentActivity activity = getActivity();
+        return activity != null ? (QMUIFragmentActivity) activity : null;
     }
 
     public boolean isAttachedToActivity() {
@@ -101,59 +93,24 @@ public abstract class QMUIFragment extends Fragment {
         mBaseView = null;
     }
 
+    /**
+     * Start a fragment that extends {@link QMUIFragment} after check current state
+     * through {@link QMUIFragmentActivity#startFragment(QMUIFragment)}
+     *
+     * @param fragment pending start fragment
+     */
     protected void startFragment(QMUIFragment fragment) {
         QMUIFragmentActivity baseFragmentActivity = this.getBaseFragmentActivity();
         if (baseFragmentActivity != null) {
             if (this.isAttachedToActivity()) {
                 baseFragmentActivity.startFragment(fragment);
             } else {
-                Log.e("QMUIFragment", "fragment not attached:" + this);
+                QMUILogger.e("QMUIFragment", "fragment not attached:" + this);
             }
         } else {
-            Log.e("QMUIFragment", "startFragment null:" + this);
+            QMUILogger.e("QMUIFragment", "startFragment null:" + this);
         }
     }
-
-    /**
-     * 模拟 startActivityForResult/onActivityResult
-     * fragment1 通过 startActivityForResult(fragment2, requestCode) 启动 fragment2
-     * fragment2 处理完之后，通过 fragment2.setFragmentResult(RESULT_OK, data) 回调数据给 fragment1
-     * fragment1，通过 onFragmentResult(requestCode, RESULT_OK, data) 取得回调的数据
-     *
-     * @param fragment    resultCode
-     * @param requestCode data
-     */
-    public void startFragmentForResult(QMUIFragment fragment, int requestCode) {
-        if (requestCode == NO_REQUEST_CODE) {
-            throw new RuntimeException("requestCode can not be " + NO_REQUEST_CODE);
-        }
-        fragment.setTargetFragment(this, requestCode);
-        mSourceRequestCode = requestCode;
-        startFragment(fragment);
-    }
-
-
-    public void setFragmentResult(int resultCode, Intent data) {
-        int targetRequestCode = getTargetRequestCode();
-        if (targetRequestCode == 0) {
-            QMUILog.w(TAG, "call setFragmentResult, but not requestCode exists");
-            return;
-        }
-        Fragment fragment = getTargetFragment();
-        if (fragment == null || !(fragment instanceof QMUIFragment)) {
-            return;
-        }
-        QMUIFragment targetFragment = (QMUIFragment) fragment;
-
-        if (targetFragment.mSourceRequestCode == targetRequestCode) {
-            targetFragment.mResultCode = resultCode;
-            targetFragment.mResultData = data;
-        }
-    }
-
-
-    //============================= 生命周期 ================================
-
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -171,28 +128,14 @@ public abstract class QMUIFragment extends Fragment {
         }
     }
 
-    @Override
-    public void onStart() {
-        super.onStart();
-        int requestCode = mSourceRequestCode;
-        int resultCode = mResultCode;
-        Intent data = mResultData;
-
-        mSourceRequestCode = NO_REQUEST_CODE;
-        mResultCode = RESULT_CANCELED;
-        mResultData = null;
-
-        if (requestCode != NO_REQUEST_CODE) {
-            onFragmentResult(requestCode, resultCode, data);
-        }
-    }
-
     private SwipeBackLayout newSwipeBackLayout() {
         View rootView = onCreateView();
+        //fit system window or not
         rootView.setFitsSystemWindows(obtainsFitsSystemWindows());
         final SwipeBackLayout swipeBackLayout = SwipeBackLayout.wrap(rootView, dragBackEdge());
         swipeBackLayout.setEnableGesture(false);
-        if(canDragBack()){
+        if (canDragBack()) {
+            //enable gesture after animation is done.
             runAfterAnimation(new Runnable() {
                 @Override
                 public void run() {
@@ -203,7 +146,9 @@ public abstract class QMUIFragment extends Fragment {
         swipeBackLayout.addSwipeListener(new SwipeBackLayout.SwipeListener() {
             @Override
             public void onScrollStateChange(int state, float scrollPercent) {
-                Log.i(TAG, "SwipeListener:onScrollStateChange: state = " + state + " ;scrollPercent = " + scrollPercent);
+                QMUILogger.i(TAG, "SwipeListener:onScrollStateChange: state = " + state + " ;scrollPercent = " + scrollPercent);
+                if (getBaseFragmentActivity() == null) return;
+                //activity base container..
                 ViewGroup container = getBaseFragmentActivity().getFragmentContainer();
                 int childCount = container.getChildCount();
                 if (state == SwipeBackLayout.STATE_IDLE) {
@@ -241,7 +186,7 @@ public abstract class QMUIFragment extends Fragment {
                                         Field cmdField = op.getClass().getDeclaredField("cmd");
                                         cmdField.setAccessible(true);
                                         int cmd = (int) cmdField.get(op);
-                                        if (cmd == 1) {
+                                        if (cmd == 1) {//Add -> Remove
                                             Field popEnterAnimField = op.getClass().getDeclaredField("popExitAnim");
                                             popEnterAnimField.setAccessible(true);
                                             popEnterAnimField.set(op, 0);
@@ -262,6 +207,7 @@ public abstract class QMUIFragment extends Fragment {
             @Override
             public void onScroll(int edgeFlag, float scrollPercent) {
                 int targetOffset = (int) (Math.abs(backViewInitOffset()) * (1 - scrollPercent));
+                if (getBaseFragmentActivity() == null) return;
                 ViewGroup container = getBaseFragmentActivity().getFragmentContainer();
                 int childCount = container.getChildCount();
                 for (int i = childCount - 1; i >= 0; i--) {
@@ -273,7 +219,7 @@ public abstract class QMUIFragment extends Fragment {
                         } else if (edgeFlag == EDGE_RIGHT) {
                             ViewCompat.offsetLeftAndRight(view, targetOffset - view.getLeft());
                         } else {
-                            Log.i(TAG, "targetOffset = " + targetOffset + " ; view.getLeft() = " + view.getLeft());
+                            QMUILogger.i(TAG, "targetOffset = " + targetOffset + " ; view.getLeft() = " + view.getLeft());
                             ViewCompat.offsetLeftAndRight(view, -targetOffset - view.getLeft());
                         }
                     }
@@ -282,7 +228,7 @@ public abstract class QMUIFragment extends Fragment {
 
             @Override
             public void onEdgeTouch(int edgeFlag) {
-                Log.i(TAG, "SwipeListener:onEdgeTouch: edgeFlag = " + edgeFlag);
+                QMUILogger.i(TAG, "SwipeListener:onEdgeTouch: edgeFlag = " + edgeFlag);
                 FragmentManager fragmentManager = getFragmentManager();
                 if (fragmentManager == null) {
                     return;
@@ -302,6 +248,14 @@ public abstract class QMUIFragment extends Fragment {
                                 cmdField.setAccessible(true);
                                 int cmd = (int) cmdField.get(op);
                                 if (cmd == 3) {
+                                    /**
+                                     * 3 = OP_REMOVE,因为在{@link QMUIFragmentActivity#startFragment(QMUIFragment)}中是采用
+                                     * replace的方式替换fragment，而fragment的replace操作 = remove + add ({@link BackStackRecord#executeOps()}可见源码)
+                                     * 因此下方的所有操作含义如下：
+                                     * 通过反射获取当前{@link BackStackRecord}中保存的fragment操作列表获取即将 OP_REMOVE的fragment,
+                                     * 清空当前fragment中的 "popEnterAnim" 属性，并且找到对应fragment示例，重新onCreateView
+                                     * 创建出该fragment的的View，此View作为SwipeBackLayout的back view,操作此view的位移达到跟随动画效果
+                                     */
                                     Field popEnterAnimField = op.getClass().getDeclaredField("popEnterAnim");
                                     popEnterAnimField.setAccessible(true);
                                     popEnterAnimField.set(op, 0);
@@ -309,15 +263,18 @@ public abstract class QMUIFragment extends Fragment {
                                     Field fragmentField = op.getClass().getDeclaredField("fragment");
                                     fragmentField.setAccessible(true);
                                     Object fragmentObject = fragmentField.get(op);
-                                    if (fragmentObject instanceof QMUIFragment) {
+                                    if (fragmentObject instanceof QMUIFragment && getBaseFragmentActivity() != null) {
                                         QMUIFragment fragment = (QMUIFragment) fragmentObject;
                                         ViewGroup container = getBaseFragmentActivity().getFragmentContainer();
                                         fragment.mIsCreateForSwipeBack = true;
+                                        //recreate place holder view by fragment
                                         View baseView = fragment.onCreateView(LayoutInflater.from(getContext()), container, null);
                                         fragment.mIsCreateForSwipeBack = false;
                                         if (baseView != null) {
                                             baseView.setTag(R.id.qmui_arch_swipe_layout_in_back, SWIPE_BACK_VIEW);
+                                            //add to activity root view layout.
                                             container.addView(baseView, 0);
+                                            //init place holder view offset.
                                             int offset = Math.abs(backViewInitOffset());
                                             if (edgeFlag == EDGE_BOTTOM) {
                                                 ViewCompat.offsetTopAndBottom(baseView, offset);
@@ -349,7 +306,7 @@ public abstract class QMUIFragment extends Fragment {
 
             @Override
             public void onScrollOverThreshold() {
-                Log.i(TAG, "SwipeListener:onEdgeTouch:onScrollOverThreshold");
+                QMUILogger.i(TAG, "SwipeListener:onEdgeTouch:onScrollOverThreshold");
             }
         });
         return swipeBackLayout;
@@ -358,12 +315,12 @@ public abstract class QMUIFragment extends Fragment {
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         SwipeBackLayout swipeBackLayout;
-        if (mCacheView == null) {
+        if (mCachedSwipeBackView == null) {
             swipeBackLayout = newSwipeBackLayout();
-            mCacheView = swipeBackLayout;
+            mCachedSwipeBackView = swipeBackLayout;
         } else if (mIsCreateForSwipeBack) {
             // in swipe back, exactly not in animation
-            swipeBackLayout = mCacheView;
+            swipeBackLayout = mCachedSwipeBackView;
         } else {
             boolean isInRemoving = false;
             try {
@@ -385,9 +342,9 @@ public abstract class QMUIFragment extends Fragment {
             }
             if (isInRemoving) {
                 swipeBackLayout = newSwipeBackLayout();
-                mCacheView = swipeBackLayout;
+                mCachedSwipeBackView = swipeBackLayout;
             } else {
-                swipeBackLayout = mCacheView;
+                swipeBackLayout = mCachedSwipeBackView;
             }
         }
 
@@ -427,10 +384,12 @@ public abstract class QMUIFragment extends Fragment {
     }
 
     protected void popBackStack() {
-        if(mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END){
+        if (mEnterAnimationStatus != ANIMATION_ENTER_STATUS_END) {
             return;
         }
-        getBaseFragmentActivity().popBackStack();
+        if (getBaseFragmentActivity() != null) {
+            getBaseFragmentActivity().popBackStack();
+        }
     }
 
     @Override
@@ -490,40 +449,32 @@ public abstract class QMUIFragment extends Fragment {
 
 
     /**
-     * onCreateView
+     * The real content view hold by {@link SwipeBackLayout}
      */
     protected abstract View onCreateView();
 
     /**
-     * 将在 onStart 中执行
-     * @param requestCode
-     * @param resultCode
-     * @param data
-     */
-    protected void onFragmentResult(int requestCode, int resultCode, Intent data) {
-
-    }
-
-    /**
      * disable or enable drag back
-     *
-     * @return
      */
     protected boolean canDragBack() {
         return true;
     }
 
     /**
-     * if enable drag back,
+     * The default drag back edge is {@link #EDGE_LEFT}
+     */
+    protected int dragBackEdge() {
+        return EDGE_LEFT;
+    }
+
+    /**
+     * Only work if drag back is enable,
+     * default is 0(no offset)
      *
-     * @return
+     * @return the offset of back view
      */
     protected int backViewInitOffset() {
         return 0;
-    }
-
-    protected int dragBackEdge() {
-        return EDGE_LEFT;
     }
 
     /**
@@ -542,7 +493,7 @@ public abstract class QMUIFragment extends Fragment {
      * @param runnable
      * @param onlyEnd
      */
-    public void runAfterAnimation(Runnable runnable, boolean onlyEnd){
+    public void runAfterAnimation(Runnable runnable, boolean onlyEnd) {
         Utils.assertInMainThread();
         boolean ok = onlyEnd ? mEnterAnimationStatus == ANIMATION_ENTER_STATUS_END :
                 mEnterAnimationStatus != ANIMATION_ENTER_STATUS_STARTED;
